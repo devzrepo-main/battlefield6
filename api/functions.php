@@ -3,26 +3,32 @@ require_once __DIR__ . '/../config.php';
 
 /**
  * Fetch Battlefield 6 player profile using the Gametools public API.
- * Works for PSN, Xbox, Steam, and PC.
+ * Works for PSN, Xbox, Steam, and PC platforms.
  */
 function tracker_get_profile($platform, $username, $apiKey = null) {
     $url = "https://api.gametools.network/bf6/stats/?name=" . urlencode($username) . "&platform=" . urlencode($platform);
 
-    $opts = [
-        "http" => [
-            "method" => "GET",
-            "header" =>
-                "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                . "AppleWebKit/537.36 (KHTML, like Gecko) "
-                . "Chrome/120.0.0.0 Safari/537.36\r\n",
-            "timeout" => 10
+    // --- Use cURL for reliability ---
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_USERAGENT => "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36",
+        CURLOPT_HTTPHEADER => [
+            "Accept: application/json",
+            "Referer: https://www.google.com/"
         ]
-    ];
+    ]);
 
-    $context = stream_context_create($opts);
-    $json = @file_get_contents($url, false, $context);
-    if (!$json || strpos($json, '<html') !== false) {
-        return [null, 'No JSON returned or endpoint blocked'];
+    $json = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+
+    if ($json === false || $httpCode >= 400 || strpos($json, '<html') !== false) {
+        return [null, "HTTP $httpCode - cURL error: $err"];
     }
 
     $data = json_decode($json, true);
@@ -30,6 +36,7 @@ function tracker_get_profile($platform, $username, $apiKey = null) {
         return [null, 'Invalid JSON'];
     }
 
+    // Ensure it contains at least a name or ID
     if (!isset($data['userName'])) {
         return [null, 'Profile not found or invalid response'];
     }
@@ -38,11 +45,23 @@ function tracker_get_profile($platform, $username, $apiKey = null) {
 }
 
 /**
- * Convert Gametools Battlefield 6 JSON into your local DB structure.
+ * Map Gametools Battlefield 6 JSON into your local DB structure.
  */
 function map_stats_from_tracker($profile) {
+    // Detect any possible user ID key
+    $ea_id = 0;
+    if (isset($profile['userId'])) {
+        $ea_id = intval($profile['userId']);
+    } elseif (isset($profile['playerId'])) {
+        $ea_id = intval($profile['playerId']);
+    } elseif (isset($profile['id'])) {
+        $ea_id = intval($profile['id']);
+    } elseif (isset($profile['personaId'])) {
+        $ea_id = intval($profile['personaId']);
+    }
+
     return [
-        'ea_id'    => intval($profile['playerId'] ?? 0),
+        'ea_id'    => $ea_id,
         'handle'   => $profile['userName'] ?? '',
         'platform' => strtolower($profile['platform'] ?? 'unknown'),
         'kills'    => intval($profile['kills'] ?? 0),
@@ -54,7 +73,7 @@ function map_stats_from_tracker($profile) {
 }
 
 /**
- * Uniform JSON response.
+ * Send JSON response.
  */
 function json_res($data, $status = 200) {
     http_response_code($status);
