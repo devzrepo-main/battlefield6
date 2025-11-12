@@ -1,0 +1,6 @@
+# keep secrets out of the repo
+config.php
+.env
+*.log
+*.tmp
+*.bak
