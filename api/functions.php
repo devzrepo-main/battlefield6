@@ -3,10 +3,9 @@ require_once __DIR__ . '/../config.php';
 
 /**
  * Fetch Battlefield 6 player profile using the Gametools public API.
- * Works for PSN, XBL, Steam, and PC platforms.
+ * Works for PSN, Xbox, Steam, and PC.
  */
 function tracker_get_profile($platform, $username, $apiKey = null) {
-    // Build Gametools request URL
     $url = "https://api.gametools.network/bf6/stats/?name=" . urlencode($username) . "&platform=" . urlencode($platform);
 
     $opts = [
@@ -22,8 +21,6 @@ function tracker_get_profile($platform, $username, $apiKey = null) {
 
     $context = stream_context_create($opts);
     $json = @file_get_contents($url, false, $context);
-
-    // Handle failed or HTML responses
     if (!$json || strpos($json, '<html') !== false) {
         return [null, 'No JSON returned or endpoint blocked'];
     }
@@ -33,7 +30,6 @@ function tracker_get_profile($platform, $username, $apiKey = null) {
         return [null, 'Invalid JSON'];
     }
 
-    // Gametools returns 'userName' on success
     if (!isset($data['userName'])) {
         return [null, 'Profile not found or invalid response'];
     }
@@ -42,34 +38,23 @@ function tracker_get_profile($platform, $username, $apiKey = null) {
 }
 
 /**
- * Convert Gametools Battlefield 6 JSON into your local database structure.
- * Maps key stats for the players table.
+ * Convert Gametools Battlefield 6 JSON into your local DB structure.
  */
 function map_stats_from_tracker($profile) {
-    // Safely extract values with defaults
-    $ea_id    = intval($profile['playerId'] ?? 0);
-    $handle   = $profile['userName'] ?? '';
-    $platform = strtolower($profile['platform'] ?? 'unknown');
-    $kills    = intval($profile['kills'] ?? 0);
-    $deaths   = intval($profile['deaths'] ?? 0);
-    $wins     = intval($profile['wins'] ?? ($profile['matches'] ?? 0));
-    $losses   = intval($profile['loses'] ?? 0);
-    $score    = intval($profile['XP'][0]['total'] ?? 0);
-
     return [
-        'ea_id'    => $ea_id,
-        'handle'   => $handle,
-        'platform' => $platform,
-        'kills'    => $kills,
-        'deaths'   => $deaths,
-        'wins'     => $wins,
-        'losses'   => $losses,
-        'score'    => $score
+        'ea_id'    => intval($profile['playerId'] ?? 0),
+        'handle'   => $profile['userName'] ?? '',
+        'platform' => strtolower($profile['platform'] ?? 'unknown'),
+        'kills'    => intval($profile['kills'] ?? 0),
+        'deaths'   => intval($profile['deaths'] ?? 0),
+        'wins'     => intval($profile['wins'] ?? ($profile['matches'] ?? 0)),
+        'losses'   => intval($profile['loses'] ?? 0),
+        'score'    => intval($profile['XP'][0]['total'] ?? 0)
     ];
 }
 
 /**
- * Send a uniform JSON response.
+ * Uniform JSON response.
  */
 function json_res($data, $status = 200) {
     http_response_code($status);
